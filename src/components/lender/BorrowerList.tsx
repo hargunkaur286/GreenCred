@@ -164,7 +164,7 @@ export function BorrowerList() {
 
                   {/* Actions */}
                   <div className="flex md:flex-col gap-2">
-                    {borrower.esg_passport ? (
+                    {borrower.esg_passport?.id ? (
                       <Button asChild variant="default" size="sm">
                         <Link to={`/passport/${borrower.esg_passport.id}`}>
                           <Eye className="h-4 w-4 mr-2" />
