@@ -228,7 +228,7 @@ export function VerificationQueue() {
                           Review & Verify
                         </Button>
                       </DialogTrigger>
-                      <DialogContent className="max-w-lg">
+                      <DialogContent className="max-w-lg max-h-[85vh] flex flex-col overflow-hidden">
                         <DialogHeader>
                           <DialogTitle>Verify KPI</DialogTitle>
                           <DialogDescription>
@@ -236,7 +236,7 @@ export function VerificationQueue() {
                           </DialogDescription>
                         </DialogHeader>
 
-                        <div className="space-y-6 py-4">
+                        <div className="flex-1 overflow-y-auto space-y-6 py-4 pr-1">
                           {/* KPI Summary */}
                           <div className="bg-muted/50 rounded-lg p-4">
                             <h4 className="font-medium mb-2">{getKPIName(item.kpi_type)}</h4>
