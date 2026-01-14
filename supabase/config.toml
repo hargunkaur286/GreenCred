@@ -1,0 +1,19 @@
+project_id = "zgvmtidsplrluzxohqqf"
+
+[functions.ml-validate]
+verify_jwt = false
+
+[functions.blockchain-attest]
+verify_jwt = false
+
+[functions.verify-kpi]
+verify_jwt = false
+
+[functions.generate-passport]
+verify_jwt = false
+
+[functions.simulate-pricing]
+verify_jwt = false
+
+[functions.ocr-document]
+verify_jwt = false
