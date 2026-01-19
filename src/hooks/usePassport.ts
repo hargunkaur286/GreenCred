@@ -127,6 +127,104 @@ export function usePassport(borrowerId?: string) {
   };
 }
 
+// Hook for viewing a specific passport by ID.
+// Works for both authenticated viewers (lenders/verifiers/admin) and public viewers (when RLS allows is_public).
+export function usePassportById(passportId: string) {
+  const { data: passport, isLoading: passportLoading } = useQuery({
+    queryKey: ['passport-by-id', passportId],
+    queryFn: async () => {
+      if (!passportId) return null;
+
+      const { data, error } = await supabase
+        .from('esg_passports')
+        .select('*')
+        .eq('id', passportId)
+        .maybeSingle();
+
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!passportId,
+  });
+
+  const borrowerId = passport?.borrower_id;
+
+  const { data: borrowerInfo } = useQuery({
+    queryKey: ['passport-by-id-borrower', borrowerId],
+    queryFn: async () => {
+      if (!borrowerId) return null;
+
+      const { data, error } = await supabase
+        .from('borrowers')
+        .select('*')
+        .eq('id', borrowerId)
+        .maybeSingle();
+
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!borrowerId,
+  });
+
+  const { data: kpis } = useQuery({
+    queryKey: ['passport-by-id-kpis', borrowerId],
+    queryFn: async () => {
+      if (!borrowerId) return [];
+
+      const { data, error } = await supabase
+        .from('kpi_submissions')
+        .select('*')
+        .eq('borrower_id', borrowerId)
+        .eq('status', 'verified');
+
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!borrowerId,
+  });
+
+  const { data: verifications } = useQuery({
+    queryKey: ['passport-by-id-verifications', kpis?.map(k => k.id)],
+    queryFn: async () => {
+      if (!kpis || kpis.length === 0) return [];
+
+      const { data, error } = await supabase
+        .from('verifications')
+        .select('*')
+        .in('kpi_id', kpis.map(k => k.id));
+
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!kpis && kpis.length > 0,
+  });
+
+  const { data: attestations } = useQuery({
+    queryKey: ['passport-by-id-attestations', kpis?.map(k => k.id)],
+    queryFn: async () => {
+      if (!kpis || kpis.length === 0) return [];
+
+      const { data, error } = await supabase
+        .from('blockchain_attestations')
+        .select('*')
+        .in('kpi_id', kpis.map(k => k.id));
+
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!kpis && kpis.length > 0,
+  });
+
+  return {
+    passport,
+    borrowerInfo,
+    kpis: kpis || [],
+    verifications: verifications || [],
+    attestations: attestations || [],
+    isLoading: passportLoading,
+  };
+}
+
 // Hook specifically for the public passport view
 export function usePublicPassport(passportId: string) {
   const { data: passport, isLoading: passportLoading } = useQuery({

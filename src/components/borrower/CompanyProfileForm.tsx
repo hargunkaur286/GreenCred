@@ -7,7 +7,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Building2, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { useAuth } from '@/hooks/useAuth';
 import type { Database } from '@/integrations/supabase/types';
 
 type CompanySize = Database['public']['Enums']['company_size'];
@@ -39,11 +38,11 @@ const countries = [
 ];
 
 interface CompanyProfileFormProps {
-  onSuccess: () => void;
+  userId: string;
+  onSuccess: () => void | Promise<void>;
 }
 
-export function CompanyProfileForm({ onSuccess }: CompanyProfileFormProps) {
-  const { user, refetchBorrower } = useAuth();
+export function CompanyProfileForm({ userId, onSuccess }: CompanyProfileFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -55,11 +54,6 @@ export function CompanyProfileForm({ onSuccess }: CompanyProfileFormProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!user) {
-      toast.error('You must be logged in to create a company profile');
-      return;
-    }
-
     if (!formData.name || !formData.sector || !formData.country) {
       toast.error('Please fill in all required fields');
       return;
@@ -68,19 +62,33 @@ export function CompanyProfileForm({ onSuccess }: CompanyProfileFormProps) {
     setIsSubmitting(true);
 
     try {
-      const { error } = await supabase.from('borrowers').insert({
+      // Avoid creating multiple borrower records for the same user (can break maybeSingle() reads).
+      const { data: existing, error: existingError } = await supabase
+        .from('borrowers')
+        .select('id')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (existingError) throw existingError;
+
+      const payload = {
         name: formData.name,
         sector: formData.sector,
         country: formData.country,
         size: formData.size,
-        user_id: user.id,
-      });
+        user_id: userId,
+      };
+
+      const { error } = existing?.id
+        ? await supabase.from('borrowers').update(payload).eq('id', existing.id)
+        : await supabase.from('borrowers').insert(payload);
 
       if (error) throw error;
 
       toast.success('Company profile created successfully');
-      refetchBorrower();
-      onSuccess();
+      await onSuccess();
     } catch (error: any) {
       console.error('Error creating company:', error);
       toast.error('Failed to create company: ' + error.message);

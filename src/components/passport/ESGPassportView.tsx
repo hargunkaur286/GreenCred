@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { ProgressRing } from '@/components/shared/ProgressRing';
 import { StatusBadge } from '@/components/shared/StatusBadge';
 import { KPI_DEFINITIONS, VerificationStatus } from '@/types/esg';
-import { usePassport } from '@/hooks/usePassport';
+import { usePassport, usePassportById } from '@/hooks/usePassport';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
@@ -25,12 +25,22 @@ const categoryConfig = {
 
 interface ESGPassportViewProps {
   borrowerId?: string;
+  passportId?: string;
 }
 
-export function ESGPassportView({ borrowerId }: ESGPassportViewProps) {
-  const { passport, borrowerInfo, kpis, verifications, attestations, isLoading, generatePassport } = usePassport(borrowerId);
+export function ESGPassportView({ borrowerId, passportId }: ESGPassportViewProps) {
+  const borrowerResult = usePassport(borrowerId);
+  const byIdResult = usePassportById(passportId || '');
 
-  const isReadOnly = useMemo(() => !!borrowerId, [borrowerId]);
+  const passport = passportId ? byIdResult.passport : borrowerResult.passport;
+  const borrowerInfo = passportId ? byIdResult.borrowerInfo : borrowerResult.borrowerInfo;
+  const kpis = passportId ? byIdResult.kpis : borrowerResult.kpis;
+  const verifications = passportId ? byIdResult.verifications : borrowerResult.verifications;
+  const attestations = passportId ? byIdResult.attestations : borrowerResult.attestations;
+  const isLoading = passportId ? byIdResult.isLoading : borrowerResult.isLoading;
+  const generatePassport = passportId ? null : borrowerResult.generatePassport;
+
+  const isReadOnly = useMemo(() => !!borrowerId || !!passportId, [borrowerId, passportId]);
   const [isPublic, setIsPublic] = useState<boolean>(false);
 
   useEffect(() => {
@@ -166,6 +176,7 @@ export function ESGPassportView({ borrowerId }: ESGPassportViewProps) {
   };
 
   const handleGeneratePassport = () => {
+    if (!generatePassport) return;
     generatePassport.mutate({ isPublic });
   };
 
@@ -209,9 +220,9 @@ export function ESGPassportView({ borrowerId }: ESGPassportViewProps) {
                   onCheckedChange={(checked) => setIsPublic(checked)}
                 />
               </div>
-              <Button onClick={handleGeneratePassport} disabled={generatePassport.isPending}>
-                <RefreshCw className={`h-4 w-4 mr-2 ${generatePassport.isPending ? 'animate-spin' : ''}`} />
-                {generatePassport.isPending ? 'Generating...' : 'Generate Passport'}
+              <Button onClick={handleGeneratePassport} disabled={generatePassport?.isPending}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${generatePassport?.isPending ? 'animate-spin' : ''}`} />
+                {generatePassport?.isPending ? 'Generating...' : 'Generate Passport'}
               </Button>
             </div>
           )}
@@ -307,8 +318,8 @@ export function ESGPassportView({ borrowerId }: ESGPassportViewProps) {
               QR Code
             </Button>
             {!isReadOnly && (
-              <Button variant="outline" onClick={handleGeneratePassport} disabled={generatePassport.isPending}>
-                <RefreshCw className={`h-4 w-4 mr-2 ${generatePassport.isPending ? 'animate-spin' : ''}`} />
+              <Button variant="outline" onClick={handleGeneratePassport} disabled={!!generatePassport?.isPending}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${generatePassport?.isPending ? 'animate-spin' : ''}`} />
                 Regenerate
               </Button>
             )}

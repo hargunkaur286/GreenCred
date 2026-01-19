@@ -236,11 +236,6 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    );
-
     const body = await req.json();
     const { kpi_id, use_ai } = body;
 
@@ -328,6 +323,21 @@ serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    const supabaseUrl = Deno.env.get('URL') ?? Deno.env.get('SUPABASE_URL');
+    const serviceRoleKey =
+      Deno.env.get('SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      return new Response(
+        JSON.stringify({
+          error: 'Missing required function secrets: URL and/or SERVICE_ROLE_KEY',
+        }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const supabaseClient = createClient(supabaseUrl, serviceRoleKey);
 
     console.log(`Processing ML validation for KPI: ${kpi_id}`);
 

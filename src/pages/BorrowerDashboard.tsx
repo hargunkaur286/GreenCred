@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Navigate } from 'react-router-dom';
 
 export default function BorrowerDashboard() {
-  const { isAuthenticated, loading, borrower, profile, refetchBorrower } = useAuth();
+  const { isAuthenticated, loading, borrower, profile, refetchBorrower, user } = useAuth();
   const { borrowerStats } = useDashboardStats();
 
   if (loading) {
@@ -39,7 +39,13 @@ export default function BorrowerDashboard() {
         title="Welcome to GreenCred"
         subtitle="Create your company profile to get started"
       >
-        <CompanyProfileForm onSuccess={() => refetchBorrower()} />
+        {user?.id ? (
+          <CompanyProfileForm userId={user.id} onSuccess={() => refetchBorrower()} />
+        ) : (
+          <div className="min-h-[200px] flex items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin" />
+          </div>
+        )}
       </DashboardLayout>
     );
   }

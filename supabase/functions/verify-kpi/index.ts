@@ -21,9 +21,13 @@ serve(async (req) => {
   }
 
   try {
+    const supabaseUrl = Deno.env.get('URL') ?? Deno.env.get('SUPABASE_URL') ?? '';
+    const serviceRoleKey =
+      Deno.env.get('SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+
     const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      supabaseUrl,
+      serviceRoleKey
     );
 
     // Get authorization header
@@ -131,16 +135,42 @@ serve(async (req) => {
       .update({ status: 'verified' })
       .eq('id', kpi_id);
 
+    // Best-effort: generate/upsert ESG passport for the borrower after verification
+    try {
+      const genResponse = await fetch(
+        `${supabaseUrl}/functions/v1/generate-passport`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${serviceRoleKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            borrower_id: kpi.borrower_id,
+            is_public: false,
+          }),
+        }
+      );
+
+      if (!genResponse.ok) {
+        const text = await genResponse.text().catch(() => '');
+        console.error(`Passport generation failed: ${genResponse.status} ${text}`);
+      }
+    } catch (genError) {
+      console.error('Passport generation error:', genError);
+    }
+
     // Optionally create blockchain attestation
     let attestation = null;
+    let attestation_error: string | null = null;
     if (create_blockchain_attestation) {
       try {
         const attestResponse = await fetch(
-          `${Deno.env.get('SUPABASE_URL')}/functions/v1/blockchain-attest`,
+          `${supabaseUrl}/functions/v1/blockchain-attest`,
           {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+              'Authorization': `Bearer ${serviceRoleKey}`,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
@@ -149,13 +179,18 @@ serve(async (req) => {
             }),
           }
         );
-        
+
         if (attestResponse.ok) {
-          const attestData = await attestResponse.json();
-          attestation = attestData.attestation;
+          const attestData = await attestResponse.json().catch(() => ({}));
+          attestation = attestData.attestation ?? null;
+        } else {
+          const text = await attestResponse.text().catch(() => '');
+          attestation_error = `blockchain-attest failed: ${attestResponse.status} ${text}`.trim();
+          console.error(attestation_error);
         }
       } catch (attestError) {
         console.error('Blockchain attestation error:', attestError);
+        attestation_error = attestError instanceof Error ? attestError.message : 'Unknown attestation error';
       }
     }
 
@@ -176,6 +211,7 @@ serve(async (req) => {
           expires_at: verification.expires_at,
         },
         attestation,
+        attestation_error,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

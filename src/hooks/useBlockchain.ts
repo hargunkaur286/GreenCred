@@ -4,25 +4,60 @@ import { useAuth } from './useAuth';
 import { toast } from 'sonner';
 
 export function useBlockchain(borrowerId?: string) {
-  const { borrower } = useAuth();
+  const { borrower, user, profile } = useAuth();
   const queryClient = useQueryClient();
   const targetBorrowerId = borrowerId || borrower?.id;
+  const mode: 'borrower' | 'verifier' = targetBorrowerId
+    ? 'borrower'
+    : user && (profile?.role === 'verifier' || profile?.role === 'admin')
+      ? 'verifier'
+      : 'borrower';
 
-  // Fetch KPIs first to get their IDs
-  const { data: kpis } = useQuery({
-    queryKey: ['blockchain-kpis', targetBorrowerId],
+  // Verifier mode: fetch verifications first (to determine KPI ids)
+  const { data: verifierVerifications } = useQuery({
+    queryKey: ['blockchain-verifier-verifications', user?.id],
     queryFn: async () => {
-      if (!targetBorrowerId) return [];
+      if (!user?.id) return [];
 
       const { data, error } = await supabase
-        .from('kpi_submissions')
+        .from('verifications')
         .select('*')
-        .eq('borrower_id', targetBorrowerId);
+        .eq('verifier_id', user.id)
+        .order('verified_at', { ascending: false });
 
       if (error) throw error;
       return data || [];
     },
-    enabled: !!targetBorrowerId,
+    enabled: mode === 'verifier' && !!user?.id,
+  });
+
+  const verifierKpiIds = (verifierVerifications || []).map((v: any) => v.kpi_id).filter(Boolean);
+
+  // Fetch KPIs
+  const { data: kpis } = useQuery({
+    queryKey: ['blockchain-kpis', mode, targetBorrowerId, verifierKpiIds],
+    queryFn: async () => {
+      if (mode === 'borrower') {
+        if (!targetBorrowerId) return [];
+        const { data, error } = await supabase
+          .from('kpi_submissions')
+          .select('*, borrower:borrowers(id, name, sector, country)')
+          .eq('borrower_id', targetBorrowerId);
+
+        if (error) throw error;
+        return data || [];
+      }
+
+      if (!verifierKpiIds.length) return [];
+      const { data, error } = await supabase
+        .from('kpi_submissions')
+        .select('*, borrower:borrowers(id, name, sector, country)')
+        .in('id', verifierKpiIds);
+
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: mode === 'borrower' ? !!targetBorrowerId : !!user?.id,
   });
 
   // Fetch blockchain attestations for the KPIs

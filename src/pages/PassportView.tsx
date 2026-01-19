@@ -5,7 +5,7 @@ import { ESGPassportView } from '@/components/passport/ESGPassportView';
 import { MLInsights } from '@/components/ml/MLInsights';
 import { BlockchainAuditTrail } from '@/components/blockchain/BlockchainAuditTrail';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { usePublicPassport } from '@/hooks/usePassport';
+import { usePassportById } from '@/hooks/usePassport';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AlertCircle } from 'lucide-react';
@@ -41,7 +41,7 @@ export default function PassportView() {
     resolveDemo();
   }, [id, navigate]);
 
-  const { passport, borrowerInfo, isLoading } = usePublicPassport(id && id !== 'demo' ? id : '');
+  const { passport, borrowerInfo, isLoading } = usePassportById(id && id !== 'demo' ? id : '');
 
   if (isResolvingDemo || isLoading) {
     return (
@@ -94,7 +94,7 @@ export default function PassportView() {
         </TabsList>
         
         <TabsContent value="passport">
-          <ESGPassportView borrowerId={passport.borrower_id} />
+          <ESGPassportView passportId={passport.id} />
         </TabsContent>
         
         <TabsContent value="ml">

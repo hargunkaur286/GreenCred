@@ -48,6 +48,17 @@ export function useBorrowers() {
       // Get KPI counts for each borrower
       const borrowersWithCounts = await Promise.all(
         (borrowers || []).map(async (borrower) => {
+          const embeddedPassports = (borrower as any).esg_passports;
+          const resolvedPassports: ESGPassport[] = Array.isArray(embeddedPassports)
+            ? embeddedPassports
+            : embeddedPassports
+              ? [embeddedPassports]
+              : [];
+
+          const latestPassport = resolvedPassports
+            .slice()
+            .sort((a, b) => new Date(b.generated_at).getTime() - new Date(a.generated_at).getTime())[0] || null;
+
           const { count: totalCount } = await supabase
             .from('kpi_submissions')
             .select('id', { count: 'exact', head: true })
@@ -61,7 +72,7 @@ export function useBorrowers() {
 
           return {
             ...borrower,
-            esg_passport: borrower.esg_passports?.[0] || null,
+            esg_passport: latestPassport,
             kpi_count: totalCount || 0,
             verified_kpi_count: verifiedCount || 0,
           };

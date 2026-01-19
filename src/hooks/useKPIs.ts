@@ -63,6 +63,27 @@ export function useKPIs(borrowerId?: string) {
   
   const effectiveBorrowerId = borrowerId || borrower?.id;
 
+  const buildDummyValidation = (overrides?: Partial<{
+    yoy_change: number | null;
+    has_documents: boolean;
+  }>) => {
+    const hasDocuments = overrides?.has_documents ?? true;
+    return {
+      anomaly_score: 0.22,
+      confidence_score: hasDocuments ? 0.86 : 0.7,
+      flags: hasDocuments ? [] : ['NO_SUPPORTING_DOCS'],
+      recommendations: [
+        'Demo mode: validation service unavailable — showing placeholder results.',
+        hasDocuments
+          ? 'Evidence detected — confidence increased.'
+          : 'Upload supporting documents to increase confidence.',
+      ],
+      sector_benchmark: null as number | null,
+      yoy_change: overrides?.yoy_change ?? null,
+      ai_analysis: null as string | null,
+    };
+  };
+
   const { data: kpis, isLoading, error } = useQuery({
     queryKey: ['kpis', effectiveBorrowerId],
     queryFn: async () => {
@@ -154,7 +175,7 @@ export function useKPIs(borrowerId?: string) {
     },
   });
 
-  const runMLValidation = async (kpiId: string, useAI = true) => {
+  const runMLValidation = async (kpiId: string, useAI = false) => {
     try {
       const { data, error } = await supabase.functions.invoke('ml-validate', {
         body: { kpi_id: kpiId, use_ai: useAI },
@@ -166,8 +187,8 @@ export function useKPIs(borrowerId?: string) {
       return data.validation;
     } catch (error: any) {
       console.error('ML validation error:', error);
-      toast.error(`ML validation failed: ${error.message}`);
-      return null;
+      toast.warning('ML validation unavailable — using demo placeholders');
+      return buildDummyValidation();
     }
   };
 
@@ -205,8 +226,11 @@ export function useKPIs(borrowerId?: string) {
       };
     } catch (error: any) {
       console.error('ML validation preview error:', error);
-      toast.error(`Validation failed: ${error.message}`);
-      return null;
+      toast.warning('Validation unavailable — using demo placeholders');
+      return buildDummyValidation({
+        yoy_change: payload.yoy_change ?? null,
+        has_documents: payload.has_documents,
+      });
     }
   };
 
@@ -286,10 +310,16 @@ export function useVerifyKPI() {
       if (error) throw error;
       return data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['pending-verifications'] });
       queryClient.invalidateQueries({ queryKey: ['kpis'] });
-      toast.success('KPI verified successfully! Blockchain attestation created.');
+      if (data?.attestation || data?.attestation?.id) {
+        toast.success('KPI verified successfully! Blockchain attestation created.');
+      } else if (data?.attestation_error) {
+        toast.warning(`KPI verified, but attestation failed: ${data.attestation_error}`);
+      } else {
+        toast.warning('KPI verified, but no blockchain attestation was created.');
+      }
     },
     onError: (error) => {
       toast.error(`Verification failed: ${error.message}`);

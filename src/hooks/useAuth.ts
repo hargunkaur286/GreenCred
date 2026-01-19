@@ -35,7 +35,7 @@ export function useAuth() {
       // Defer profile fetch to avoid deadlock
       if (session?.user) {
         setTimeout(() => {
-          fetchProfile(session.user.id);
+          fetchProfile(session.user);
         }, 0);
       } else {
         setProfile(null);
@@ -50,7 +50,7 @@ export function useAuth() {
       setUser(session?.user ?? null);
       
       if (session?.user) {
-        fetchProfile(session.user.id);
+        fetchProfile(session.user);
       } else {
         setLoading(false);
       }
@@ -59,29 +59,64 @@ export function useAuth() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const fetchProfile = async (userId: string) => {
-    try {
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
+  const ensureProfile = async (currentUser: User): Promise<Profile | null> => {
+    const userId = currentUser.id;
+    const { data: existing, error: existingError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
 
-      if (profileError) throw profileError;
-      
-      if (profileData) {
-        setProfile(profileData as Profile);
-        
-        // If borrower, fetch their company
-        if (profileData.role === 'borrower') {
-          const { data: borrowerData } = await supabase
-            .from('borrowers')
-            .select('*')
-            .eq('user_id', userId)
-            .maybeSingle();
-          
-          setBorrower(borrowerData as Borrower | null);
+    if (existingError) throw existingError;
+    if (existing) return existing as Profile;
+
+    // Backfill for users created before the DB trigger/migrations were applied.
+    const roleFromMeta = (currentUser.user_metadata as any)?.role;
+    const fullNameFromMeta = (currentUser.user_metadata as any)?.full_name ?? null;
+    const organizationFromMeta = (currentUser.user_metadata as any)?.organization_name ?? null;
+
+    const role: Profile['role'] = ['borrower', 'verifier', 'lender', 'admin'].includes(roleFromMeta)
+      ? roleFromMeta
+      : 'borrower';
+
+    const { data: inserted, error: insertError } = await supabase
+      .from('profiles')
+      .insert({
+        id: userId,
+        email: currentUser.email ?? '',
+        full_name: fullNameFromMeta,
+        role,
+        organization_name: organizationFromMeta,
+      })
+      .select('*')
+      .single();
+
+    if (insertError) throw insertError;
+    return inserted as Profile;
+  };
+
+  const fetchProfile = async (currentUser: User) => {
+    try {
+      const profileData = await ensureProfile(currentUser);
+      setProfile(profileData);
+
+      // If borrower, fetch their company
+      if (profileData?.role === 'borrower') {
+        const { data: borrowerData, error: borrowerError } = await supabase
+          .from('borrowers')
+          .select('*')
+          .eq('user_id', currentUser.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (borrowerError) {
+          console.error('Error fetching borrower:', borrowerError);
         }
+
+        setBorrower(borrowerData as Borrower | null);
+      } else {
+        setBorrower(null);
       }
     } catch (error) {
       console.error('Error fetching profile:', error);
@@ -100,11 +135,17 @@ export function useAuth() {
 
   const refetchBorrower = async () => {
     if (user) {
-      const { data: borrowerData } = await supabase
+      const { data: borrowerData, error } = await supabase
         .from('borrowers')
         .select('*')
         .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
+
+      if (error) {
+        console.error('Error refetching borrower:', error);
+      }
       
       setBorrower(borrowerData as Borrower | null);
     }

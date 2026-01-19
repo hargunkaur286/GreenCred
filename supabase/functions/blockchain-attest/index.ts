@@ -151,9 +151,13 @@ serve(async (req) => {
   }
 
   try {
+    const supabaseUrl = Deno.env.get('URL') ?? Deno.env.get('SUPABASE_URL') ?? '';
+    const serviceRoleKey =
+      Deno.env.get('SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+
     const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      supabaseUrl,
+      serviceRoleKey
     );
 
     const { kpi_id, verification_id } = await req.json();

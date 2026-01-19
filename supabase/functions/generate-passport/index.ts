@@ -51,12 +51,29 @@ serve(async (req) => {
   }
 
   try {
+    const supabaseUrl = Deno.env.get('URL') ?? Deno.env.get('SUPABASE_URL') ?? '';
+    const serviceRoleKey =
+      Deno.env.get('SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error('Missing Supabase configuration. Ensure URL and SERVICE_ROLE_KEY are set.');
+      return new Response(
+        JSON.stringify({
+          error: 'Server misconfigured: missing URL and/or SERVICE_ROLE_KEY function secrets.',
+        }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      supabaseUrl,
+      serviceRoleKey
     );
 
-    // Require authentication (prevents anonymous users from generating passports)
+    // Require authentication (prevents anonymous users from generating passports).
+    // Supports:
+    // - End-user access tokens (normal app usage)
+    // - Service role key as bearer (internal Edge Function calls)
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(
@@ -66,26 +83,39 @@ serve(async (req) => {
     }
 
     const token = authHeader.replace('Bearer ', '');
-    const { data: { user }, error: userError } = await supabaseClient.auth.getUser(token);
+    const isSystemCall = token === serviceRoleKey;
 
-    if (userError || !user) {
-      return new Response(
-        JSON.stringify({ error: 'Invalid token' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    let userId: string | null = null;
+    let userEmail: string | null = null;
+    let actorRole: string = 'admin';
 
-    const { data: profile } = await supabaseClient
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single();
+    if (!isSystemCall) {
+      const { data: { user }, error: userError } = await supabaseClient.auth.getUser(token);
 
-    if (!profile || !['borrower', 'verifier', 'lender', 'admin'].includes(profile.role)) {
-      return new Response(
-        JSON.stringify({ error: 'Not authorized to generate passports' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      if (userError || !user) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid token' }),
+          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      userId = user.id;
+      userEmail = user.email ?? null;
+
+      const { data: profile } = await supabaseClient
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+
+      if (!profile || !['borrower', 'verifier', 'lender', 'admin'].includes(profile.role)) {
+        return new Response(
+          JSON.stringify({ error: 'Not authorized to generate passports' }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      actorRole = profile.role;
     }
 
     const { borrower_id, is_public } = await req.json();
@@ -97,7 +127,9 @@ serve(async (req) => {
       );
     }
 
-    console.log(`Generating ESG passport for borrower: ${borrower_id}`);
+    console.log(
+      `Generating ESG passport for borrower: ${borrower_id} (actor=${isSystemCall ? 'system' : userId ?? userEmail ?? 'unknown'})`
+    );
 
     // Fetch borrower
     const { data: borrower, error: borrowerError } = await supabaseClient
@@ -114,7 +146,7 @@ serve(async (req) => {
     }
 
     // Borrowers can only generate passports for their own borrower record
-    if (profile.role === 'borrower' && borrower.user_id !== user.id) {
+    if (!isSystemCall && actorRole === 'borrower' && borrower.user_id !== userId) {
       return new Response(
         JSON.stringify({ error: 'Borrowers can only generate their own passport' }),
         { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

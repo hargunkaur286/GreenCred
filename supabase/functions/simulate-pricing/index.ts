@@ -33,9 +33,26 @@ serve(async (req) => {
   }
 
   try {
+    const supabaseUrl = Deno.env.get('URL') ?? Deno.env.get('SUPABASE_URL') ?? '';
+    const serviceRoleKey =
+      Deno.env.get('SERVICE_ROLE_KEY') ?? Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+    
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.error('Missing Supabase configuration. Ensure URL and SERVICE_ROLE_KEY are set.');
+      return new Response(
+        JSON.stringify({
+          error: 'Server misconfigured: missing URL and/or SERVICE_ROLE_KEY function secrets.',
+        }),
+        {
+          status: 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        },
+      );
+    }
+
     const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+      supabaseUrl,
+      serviceRoleKey
     );
 
     // Get authorization header
@@ -93,11 +110,11 @@ serve(async (req) => {
     if (passportError || !passport) {
       // Generate passport if it doesn't exist
       const passportResponse = await fetch(
-        `${Deno.env.get('SUPABASE_URL')}/functions/v1/generate-passport`,
+        `${supabaseUrl}/functions/v1/generate-passport`,
         {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+            'Authorization': `Bearer ${serviceRoleKey}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ borrower_id }),
